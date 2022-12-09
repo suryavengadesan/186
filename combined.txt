@@ -917,12 +917,13 @@ Distributed Recovery (2PC) with Presumed Abort (Optimization)
 Presumed Abort => both coordinator and participant understand that no log records means aborts
     => abort records never need to be flushed 
 => Possible Situations
-	- Participant recovers, sees no phase1 abort record => 
-	- Participant recovers, sees phase1 abort record  => 
-	- Participant recovers, sees phase2 abort record => 
-	- Coordinator recovers, sees no abort record => 
-	- Coordinator recovers, sees abort record => 
- 
+	- Participant recovers, sees no phase 1 abort record => aborts locally, no messages sent out
+	- Participant recovers, sees phase 1 abort record  => aborts locally, no messages sent out (coordinator times out and assumes abort)
+	- Participant recovers, sees phase 2 abort record => aborts locally, no messages sent out (coordinator times out and assumes no ack as abort)
+	- Coordinator recovers, sees no abort record => aborts locally, no messages sent out & respond to status inquiry as abort 
+	- Coordinator recovers, sees abort record => aborts locally, no messages sent out
+    - Participant/Coordinator  recovers, sees commit => follow 2PC
+    
 Commit Record Recovery: 2PC == 2PC w/ Presumed Abort 
 
 -------------------------------------NEW NOTE---------------------------------------------------------------------------------------------
