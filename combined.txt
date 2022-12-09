@@ -293,12 +293,17 @@ Common Questions:
 -------------------------------------NEW NOTE---------------------------------------------------------------------------------------------
 
 note 7 - hashing
-- B = buffer size 
+- B = buffer size
+
+
 
 - external hashing
     - partitioning phase (divide) = split into B - 1 partitions 
-    - hashing phase (conquer) = if current parition size <= B, save to hash table 
-        - recursive hashing, if any partition >= B 
+    - hashing phase (conquer)
+        - build & probe -> if current parition size <= B, save to hash table 
+        - recursive hashing -> if any partition >= B 
+- note: Double check passes (both read & write)! 
+     
 
 - total IO => NEVER APPLY SORT FORMULA 
     - R for input, R for output, and RW for each intermediate partitioning phase 
@@ -754,7 +759,8 @@ Redo Phase (durability )
 Undo Phase (atomicity)
     - starts at end of log and finishes at beginning of log 
     - Undo every UPDATE record with running or aborting status 
-    - writes CLR record to log for each UPDATE record undone 
+    - writes CLR record to log for each UPDATE record undone (that is running or aborting)
+        => Skip commiting or ended transaction's log records 
         => Won't undo operation that is already undone 
         => retrieve LSN from CLR's after abort, and skip them when rolling back
             => CLR records use undoNextLSN that map to prevLSN 
@@ -762,6 +768,7 @@ Undo Phase (atomicity)
 
 Code Version
     - Upload Transacation table's lastLSN value into PQ 
+    - Undo only Updates associated with transactions in transcation table 
 
 undoNextLSN => stores LSN of next operation to be undone for transaction 
     
@@ -891,30 +898,33 @@ Preparation Phase
     (4) Coordinator generates commit if unanimous yes vote 
 
 Commit/Abort Phase
-	(1) Coordinator sends to every participant, result of yes/no vote for commit/abort based on flushed record
+	(1) Coordinator sends to every participant, result of yes/no vote as commit/abort based on flushed record
     (2) Participants generate corresponding commit or abort record and flush to disk 
     (3) Participants send ACK (acknowledge) message to coordinator
     (4) Coordinator generates End record after recieving all ACK's and flushes to disk in the future 
 
 Distributed Recovery (2PC)
-=> Possible Failurse
-	- Participant recovers, sees no prepare record => local abort 
-	- Participant recovers, sees prepare record => asks coordinator about commit, resumes phase 2 
-	- Participant recovers, sees commit record
-	- Coordinator recovers, sees no commit record
-	- Coordinator recovers, sees commit record 
-	- Coordinator recovers, sees end record 
+=> Possible Failure
+	- Participant recovers, sees no prepare record => aborts locally, doesn't sent any votes 
+	- Participant recovers, sees prepare record => asks coordinator about commit, resumes phase 2 after recieving record 
+	- Participant recovers, sees commit record => send ACK to coordinator
+	- Coordinator recovers, sees no commit record => aborts locally, sends no messages and responds to status inquiry with abort transaction record 
+	- Coordinator recovers, sees commit record => rerun phase 2, by sending out ACK again 
+	- Coordinator recovers, sees end record => nothing to do, because process is finished 
 
 
 Distributed Recovery (2PC) with Presumed Abort (Optimization)
-Presumed Abort -> abort records never need to be flushed 
+Presumed Abort => both coordinator and participant understand that no log records means aborts
+    => abort records never need to be flushed 
 => Possible Situations
 	- Participant recovers, sees no phase1 abort record => 
 	- Participant recovers, sees phase1 abort record  => 
-	- Participant recovers, sees phase2 abort record
-	- Coordinator recovers, sees no abort record
-	- Coordinator recovers, sees abort record 
+	- Participant recovers, sees phase2 abort record => 
+	- Coordinator recovers, sees no abort record => 
+	- Coordinator recovers, sees abort record => 
  
+Commit Record Recovery: 2PC == 2PC w/ Presumed Abort 
+
 -------------------------------------NEW NOTE---------------------------------------------------------------------------------------------
 
 N17 - NoSQL
