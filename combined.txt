@@ -308,6 +308,7 @@ note 7 - hashing
 - total IO => NEVER APPLY SORT FORMULA 
     - R for input, R for output, and RW for each intermediate partitioning phase 
     - (sum_(i=1)^(m) r_i + w_i) + 2X
+- count IOs (1) partition phase IO's (2) build and probe phase IOS
 
 
 - B = N/P pages per partision s.t. N = total pages, P = total partitions, B = pages per partition
@@ -448,7 +449,10 @@ SR - Pass 1 => only considers single tables or joins from single table
         1. Full Scan IO
             => [P] I/O's s.t. table P
         2. Index Scan IO 
-            => Alt 1 Index => (cost to reach leaf) + (num leaves read)
+            => Alt 1 Index 
+                => (cost to reach leaf) + (num leaves read)
+                    => clustered: (inner leaf) + (selectivity * records)/(records/page)
+                    => unclustered: (inner leaf) + ((selectivity * records)/(records/page) + (selectivity * records))
     - Valid Access Plans to Advance
         1. Optimal Plan (for each relation/table) = lowest IOs 
         2. Plan with interesting order
@@ -467,6 +471,9 @@ SR - Pass 2 to N
         2. SNLJ, INLJ on left relation (odering preserved)
     - Plans => Never Interesting Orders
         1. GHJ, PNLJ, BNLJ 
+    - IOs SMJ 
+        => 
+
 
 Counting Join I/Os 
     - Considerations
@@ -571,6 +578,8 @@ View Serializability
 - Conflict Serializable subset of View serializiable 
 - Conflict Serializable + Blind Writes = View Serializable 
 
+Predicate Locks => apply lock on a range of records, prevents phantom problem
+
 Common Problems: 
 1. Determine if transaction is conflict serializable? 
 2. True False of ACID properities 
@@ -642,23 +651,25 @@ Motivation
                 => no intermediate states ever saved
 
 Force Policy
-    - Save modified pages to disk before every transaction that completes
+    - Save modified pages to disk before transactions commits 
+        => ensures durability, but to many unceccsary writes 
 
 No Force Policy
     - Only save page to disk before page gets evicted from buffer pool 
-        - Redo operation restores these values 
+        - handled with redos during recovery  
 
 No-steal Policy
     - Pages can't be evicted from memory (i.e. saved to disk), until transaction commits
-        - Requires us to keep all pages in memory until transaction completes
+        => ensures atomiticity, but requires us too many pages in memory
+            - doesn't leave database in intermediate state, since stores temp logs in memory 
 
 Steal Policy
     - Allows pages to write to disk before transaction finishes
-
-Performance Improvement 
-    - No-force policy and steal policy allows to reduce total writes 
+        - handled with undos during recovery 
 
 Steal, No Force Policy 
+    - Allows to reduce total writes => better performance than force, no steal
+    - However doesn't ensure atomoticity and durabilty => possible with undo and redo in recovery 
 
 Logging => sequence of log records of operations done on database
 
@@ -709,25 +720,24 @@ Dirty Page Table
 
 recLSN => first opreation to dirty the page
 
-Undo Logging => Recovery Mechanism
-    => Uses force policy and steal policy and buffer pool management 
+Undo Logging 
+    => Steal + Force Recovery Mechanism
+    => Steps 
+        - run recovery manager 
+        - scan logs, starting at the end
+        - attempt to determine if transaction has ended or not 
+            - if COMMIT/ABORT T -> mark T as completed
+            - if UPDATE T, X, v -> and if T not completed, write X=v to disk, else ignore
+            - if START T -> ignore 
 
-Steps 
-    - run recovery manager 
-    - scan logs, starting at the end
-    - attempt to determine if transaction has ended or not 
-        - if COMMIT/ABORT T -> mark T as completed
-        - if UPDATE T, X, v -> and if T not completed, write X=v to disk, else ignore
-        - if START T -> ignore 
+Redo Logging 
+    => No Steal + No Force Recovery mechanism 
+    => Steps 
+        - read log from beginning 
+        - redo all updates of commited transactions
 
-Redo Logging => Recovery mechanism 
-    => Uses no-force policy and no-steal policy and buffer management 
-
-Steps 
-    - read log from beginning 
-    - redo all updates of commited transactions
-
-ARIES Recovery Algo
+ARIES 
+    => Steal + No Force Recovery Mechanism
     1. Analysis Phase => Reconstruct transaction table and DPT 
     2. Redo Phase => Repeats operations for durability 
     3. Undo Phase => Undo operations that were running mid-crash 
@@ -740,7 +750,7 @@ Analysis Phase
         - If record UPDATE and page not in DPT, add to DPT and set recLSN to LSN 
         - If record END, remove Xact from Xact Table
     - For any committing Xact, write END to log and remove Xact from Xact table 
-    - Any Xact runnings need to aborted and ABORT record logged 
+    - Any Xact runnings need to aborted, then ABORT record must be logged 
         -> Modify transaction table and last LSN accordingly
     - Xact table and DPT can reflect any point between BEGIN_CHECKPOINT and END_ENDPOINT
 
@@ -898,7 +908,7 @@ Preparation Phase
     (4) Coordinator generates commit if unanimous yes vote 
 
 Commit/Abort Phase
-	(1) Coordinator sends to every participant, result of yes/no vote as commit/abort based on flushed record
+	(1) Coordinator flushes, then sends to every participant, result of yes/no vote as commit/abort based on flushed record
     (2) Participants generate corresponding commit or abort record and flush to disk 
     (3) Participants send ACK (acknowledge) message to coordinator
     (4) Coordinator generates End record after recieving all ACK's and flushes to disk in the future 
@@ -923,7 +933,7 @@ Presumed Abort => both coordinator and participant understand that no log record
 	- Coordinator recovers, sees no abort record => aborts locally, no messages sent out & respond to status inquiry as abort 
 	- Coordinator recovers, sees abort record => aborts locally, no messages sent out
     - Participant/Coordinator  recovers, sees commit => follow 2PC
-    
+
 Commit Record Recovery: 2PC == 2PC w/ Presumed Abort 
 
 -------------------------------------NEW NOTE---------------------------------------------------------------------------------------------
@@ -964,3 +974,7 @@ Querying Semistructure Data
 N18 - Spark 
 
 N/A 
+
+-------------------------------------MISC---------------------------------------------------------------------------------------------
+
+Test Prep Strat: https://www.youtube.com/watch?v=mKJ9TBObYrw
